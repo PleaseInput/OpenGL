@@ -1,0 +1,27 @@
+1)
+    claim some variables.
+	// cubemap
+	GLuint cubemap_program;
+	GLuint cubemap_vao;
+	GLuint cubemap_vbo;
+	GLuint cubemap_proj;
+	GLuint cubemap_view;
+	GLuint cubemap_tex;
+
+	// cube position
+	static const GLfloat cubemap_positions[] = ......
+
+	// six textures
+	vector<std::string> faces = 
+	{
+	"cubemaps/face-r.png",
+	"cubemaps/face-l.png",
+	"cubemaps/face-t.png",
+	"cubemaps/face-d.png",
+	"cubemaps/face-f.png",
+	"cubemaps/face-b.png"
+	};
+2)
+    cubemap function
+	// load cubemap
+	GLuint load_cubemap(vector<std::string> faces);

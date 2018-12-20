@@ -1,0 +1,42 @@
+0)
+    include "camera.h"
+1) 
+    claim a Camera variable e.g. "camera".
+===============================================
+movement
+1)
+    in My_Display(),  add the two lines.
+	// camera
+	camera.get_delta_time();
+	view = camera.get_view_matrix();
+2)
+    in My_Keyboard(...), add the line.
+	camera.camera_movement(key);
+===============================================
+rotation
+1)
+    in main.cpp, add the function to detect mouse movement.
+	void detect_mouse(int x, int y)
+	{
+	camera.camera_rotation(x, y);
+	}
+2)
+    in main(...), add the line.
+	// camera
+	glutPassiveMotionFunc(detect_mouse);
+===============================================
+zoom
+1)
+    in My_Display(), add the line.
+	proj = camera.get_proj_matrix();
+2)
+     in main.cpp, add the function to detect mouse scroll.
+	void detect_mouse_scroll(int wheel, int dir, int x, int y)
+	{
+	camera.camera_zoom(dir);
+	}
+3)
+     in main(...), add the line.
+	// camera
+	glutMouseWheelFunc(detect_mouse_scroll);
+	
