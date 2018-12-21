@@ -2,6 +2,9 @@
     include "camera.h"
 1) 
     claim a Camera variable e.g. "camera".
+2)
+    in main(...), add the line to hide the cursor.
+    	glutSetCursor(GLUT_CURSOR_NONE);
 ===============================================
 movement
 1)
