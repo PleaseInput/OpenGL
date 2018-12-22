@@ -1,0 +1,18 @@
+1)
+    include "Program.h"
+2)
+    claim a Program variable in global area.
+	Program program;
+=======================================
+in initialization
+1)
+    set the program.
+	program.set_program(vertex path, fragment path);
+=======================================
+in display function
+1)
+    activate the program.
+	program.use();
+2)
+    if need be, set some uniform variables in shader.
+	program.set_mat4(uniform name, a value sent to shader);
