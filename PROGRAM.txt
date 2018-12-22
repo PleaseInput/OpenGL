@@ -4,6 +4,12 @@
     claim a Program variable in global area.
 	Program program;
 =======================================
+problems
+1)
+    at first, It is "Program program(vertex path, fragment path);", but throwing me a memory access violation. The reason is I call glCreatProgram() in the program constructor before glewInit().
+    
+    this is the solution I find. "https://www.opengl.org/discussion_boards/showthread.php/177041-glCreateProgram-Access-violation"
+=======================================
 in initialization
 1)
     set the program.
