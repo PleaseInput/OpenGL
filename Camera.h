@@ -2,14 +2,18 @@
 
 // #include "Common.h"
 #include <vector>
-#define WINDOW_BOUNDARY 0.05
+#define WINDOW_BOUNDARY 0.1
+#define FOV_MIN 1.0
+#define FOV_MAX 179.0
+#define PITCH_MIN -89.0
+#define PITCH_MAX 89.0
 
 using namespace glm;
 using namespace std;
 
 // default camera values
-const float PITCH = 0.0f;
-const float YAW = -90.0f;	// view at (0, 0, -1) by default 
+// const float PITCH = 0.0f;
+// const float YAW = -90.0f;	// view at (0, 0, -1) by default 
 const float CAMERA_SPEED = 0.1f;
 const float MOUSE_SENSITIVITY = 0.5f;
 const float FOV = 45.0f;
@@ -27,12 +31,12 @@ public:
 	vec3 Right;
 	vec3 World_up;
 
-	// Euler angles
+	// Euler angles [0, 360]. stored in degrees
 	float Pitch;
 	float Yaw;
 
 	// zoom
-	float fov;	// field of view
+	float Fov;	// field of view
 	float aspect_w;	// width
 	float aspect_h; // height
 	float near_plane;
@@ -51,7 +55,7 @@ public:
 	float last_frame;
 
 	// constructor
-	Camera(vec3 position, vec3 up, float width, float height);
+	Camera(vec3 position, vec3 up, vec3 front, float width, float height, float fov);
 
 	// delta time
 	void get_delta_time();
@@ -73,38 +77,49 @@ private:
 };
 
 // constructor
- Camera:: Camera(vec3 position = vec3(0.0f), vec3 up = vec3(0.0f, 1.0f, 0.0f), float width = 600.0f, float height = 600.0f)
+Camera::Camera(vec3 position = vec3(0.0f), vec3 up = vec3(0.0f, 1.0f, 0.0f), vec3 front = vec3(0.0, 0.0, -1.0), float width = 600.0f, float height = 600.0f, float fov = FOV)
 {
-	 // camera attrubutes
-	 Position = position;
-	 World_up = up;
+	// camera attrubutes
+	Position = position;
+	World_up = up;
 
-	 // angles
-	 Pitch = PITCH;
-	 Yaw = YAW;
+	// angles
+	// Pitch = PITCH;
+	// Yaw = YAW;
+	Front = normalize(front);
+	Pitch = asin(Front.y);	// in radians for computing Yaw
+	Yaw = degrees(acos((Front.x / cos(Pitch))));
+	Pitch = degrees(Pitch);
 
-	 // zoom
-	 fov = FOV;
-	 aspect_w = width;
-	 aspect_h = height;
-	 near_plane = NEAR_PLANE;
-	 far_plane = FAR_PLANE;
+	// Right
+	Right = normalize(cross(Front, World_up));
+	// Up
+	Up = normalize(cross(Right, Front));
 
-	 update_camera_vector();
+	// zoom
+	// fov = FOV;
+	Fov = fov;
+	aspect_w = width;
+	aspect_h = height;
+	near_plane = NEAR_PLANE;
+	far_plane = FAR_PLANE;
 
-	 // option
-	 first_mouse = true;
-	 camera_speed = CAMERA_SPEED;
-	 mouse_sensitivity = MOUSE_SENSITIVITY;
-	 // timing
-	 delta_time = 0.0f;
-	 last_frame = 0.0f;
+	// update_camera_vector();
+
+	// option
+	first_mouse = true;
+	camera_speed = CAMERA_SPEED;
+	mouse_sensitivity = MOUSE_SENSITIVITY;
+	// timing
+	delta_time = 0.0f;
+	last_frame = 0.0f;
+
 }
 
 // delta time
 void Camera::get_delta_time()
 {
-	float current_frame = (float)glutGet(GLUT_ELAPSED_TIME);
+	int current_frame = glutGet(GLUT_ELAPSED_TIME);
 	delta_time = current_frame - last_frame;
 	last_frame = current_frame;
 }
@@ -147,13 +162,14 @@ void Camera::camera_rotation(float current_x, float current_y)
 	Pitch += y_offset;
 	Yaw += x_offset;
 
-	if (Pitch > 89.0f)
-		Pitch = 89.0f;
-	if (Pitch < -89.0f)
-		Pitch = -89.0f;
+	if (Pitch > PITCH_MAX)
+		Pitch = PITCH_MAX;
+	if (Pitch < PITCH_MIN)
+		Pitch = PITCH_MIN;
 
 	update_camera_vector();
 
+	/*
 	// boundary condition
 	if (current_x < aspect_w * WINDOW_BOUNDARY || current_x > aspect_w * (1 - WINDOW_BOUNDARY) ||
 		current_y < aspect_h * WINDOW_BOUNDARY || current_y > aspect_h * (1 - WINDOW_BOUNDARY))
@@ -162,17 +178,18 @@ void Camera::camera_rotation(float current_x, float current_y)
 		last_x = aspect_w / 2;
 		last_y = aspect_h / 2;
 	}
+	*/
 }
 
 // zoom
 void Camera::camera_zoom(int dir)
 {
-	if (fov >= 1.0f && fov <= 60.0f)
-		fov -= dir;
-	if (fov < 1.0f)
-		fov = 1.0f;
-	if (fov > 60.0f)
-		fov = 60.0f;
+	if (Fov >= FOV_MIN && Fov <= FOV_MAX)
+		Fov -= dir;
+	if (Fov < FOV_MIN)
+		Fov = FOV_MIN;
+	if (Fov > FOV_MAX)
+		Fov = FOV_MAX;
 }
 
 // return view matrix
@@ -184,7 +201,7 @@ void Camera::camera_zoom(int dir)
 // return projection matrix
 mat4 Camera::get_proj_matrix()
 {
-	return perspective(radians(fov), aspect_w / aspect_h, near_plane, far_plane);
+	return perspective(radians(Fov), aspect_w / aspect_h, near_plane, far_plane);
 }
  
 // calculates the front vector from the updated Eular angles 
