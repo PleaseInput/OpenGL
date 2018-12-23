@@ -1,5 +1,5 @@
 #pragma once
-#include "Common.h"
+// #include "Common.h"
 #include <vector>
 
 using namespace glm;
@@ -72,7 +72,7 @@ void Program::set_int(const string &variable_name, int value)
 }
 void Program::set_float(const string &variable_name, float value)
 {
-	glUniform1i(glGetUniformLocation(program_ID, variable_name.c_str()), value);
+	glUniform1f(glGetUniformLocation(program_ID, variable_name.c_str()), value);
 }
 void Program::set_mat4(const string &variable_name, mat4 matrix)
 {

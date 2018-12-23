@@ -2,6 +2,7 @@
 
 // #include "Common.h"
 #include <vector>
+#define WINDOW_BOUNDARY 0.05
 
 using namespace glm;
 using namespace std;
@@ -95,7 +96,6 @@ private:
 	 first_mouse = true;
 	 camera_speed = CAMERA_SPEED;
 	 mouse_sensitivity = MOUSE_SENSITIVITY;
-
 	 // timing
 	 delta_time = 0.0f;
 	 last_frame = 0.0f;
@@ -104,7 +104,7 @@ private:
 // delta time
 void Camera::get_delta_time()
 {
-	float current_frame = glutGet(GLUT_ELAPSED_TIME);
+	float current_frame = (float)glutGet(GLUT_ELAPSED_TIME);
 	delta_time = current_frame - last_frame;
 	last_frame = current_frame;
 }
@@ -153,6 +153,15 @@ void Camera::camera_rotation(float current_x, float current_y)
 		Pitch = -89.0f;
 
 	update_camera_vector();
+
+	// boundary condition
+	if (current_x < aspect_w * WINDOW_BOUNDARY || current_x > aspect_w * (1 - WINDOW_BOUNDARY) ||
+		current_y < aspect_h * WINDOW_BOUNDARY || current_y > aspect_h * (1 - WINDOW_BOUNDARY))
+	{
+		glutWarpPointer((int)(aspect_w / 2), (int)(aspect_h / 2));
+		last_x = aspect_w / 2;
+		last_y = aspect_h / 2;
+	}
 }
 
 // zoom
