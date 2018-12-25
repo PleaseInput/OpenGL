@@ -24,6 +24,7 @@ class Program
 		void set_bool(const string &variable_name, bool value);
 		void set_int(const string &variable_name, int value);
 		void set_float(const string &variable_name, float value);
+		void set_vec3(const string &variable_name, vec3 value);
 		void set_mat4(const string &variable_name, mat4 matrix);
 };
 void Program::set_program(const char *vertex_path, const char *fragment_path)
@@ -73,6 +74,10 @@ void Program::set_int(const string &variable_name, int value)
 void Program::set_float(const string &variable_name, float value)
 {
 	glUniform1f(glGetUniformLocation(program_ID, variable_name.c_str()), value);
+}
+void Program::set_vec3(const string &variable_name, vec3 value)
+{
+	glUniform3fv(glGetUniformLocation(program_ID, variable_name.c_str()), 1, value_ptr(value));
 }
 void Program::set_mat4(const string &variable_name, mat4 matrix)
 {

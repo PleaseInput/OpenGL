@@ -2,12 +2,18 @@
 #include "../Externals/Include/assimp/Importer.hpp"
 #include "../Externals/Include/assimp/scene.h"
 #include "../Externals/Include/assimp/postprocess.h"
-#include "../Externals/Include/camera.h"
+#include "../Externals/Include/Camera.h"
+#include "../Externals/Include/Program.h"
 
 #define _CRT_SECURE_NO_WARNINGS
 #define MENU_TIMER_START 1
 #define MENU_TIMER_STOP 2
 #define MENU_EXIT 3
+#define SKYBOX_SIZE 500
+#define WINDOW_WIDTH 1440
+#define WINDOW_HEIGHT 900
+#define SHADOW_WIDTH 1024
+#define SHADOW_HEIGHT 1024
 
 GLubyte timer_cnt = 0;
 bool timer_enabled = true;
@@ -16,16 +22,50 @@ unsigned int timer_speed = 16;
 using namespace glm;
 using namespace std;
 
-Camera camera(vec3(0.0f, 0.0f, 0.0f), vec3(0.0f, 1.0f, 0.0f));
+Camera camera(vec3(0.0f, 0.0f, 0.0f), vec3(0.0f, 1.0f, 0.0f), vec3(-1.0, -1.0, 0.0), WINDOW_WIDTH, WINDOW_HEIGHT, 80.0);
+
+// define some stucte
+struct Shape
+{
+	GLuint vao;
+	GLuint vbo_position;
+	GLuint vbo_normal;
+	GLuint vbo_texcoord;
+	GLuint ibo;
+	int drawCount;
+	int materialID;
+};
+
+struct Material
+{
+	GLuint diffuse_tex;
+};
+
+/*
+struct MVP_mat
+{
+	mat4 proj;
+	mat4 view;
+	mat4 model;
+};
+*/
 
 GLint um4mv;
 GLint um4p;
 
 // model
-mat4 proj;
-mat4 view;
-mat4 model;
-GLuint program;
+// mat4 proj;
+// mat4 view;
+// mat4 model;
+// GLuint program;
+
+// object
+Program obj_program;
+vector<Shape> obj_shapes;
+vector<Material> obj_materials;
+mat4 obj_proj;
+mat4 obj_view;
+mat4 obj_model;
 
 // FB
 GLuint programFB;
@@ -36,12 +76,26 @@ GLuint depthRBO;
 GLuint FBODataTexture;
 
 // cubemap
-GLuint cubemap_program;
+// GLuint cubemap_program;
+Program cubemap_program;
 GLuint cubemap_vao;
 GLuint cubemap_vbo;
-GLuint cubemap_proj;
-GLuint cubemap_view;
+mat4 cubemap_proj;
+mat4 cubemap_view;
+mat4 cubemap_model;
 GLuint cubemap_tex;
+
+// quad
+Program quad_program;
+GLuint quad_vao;
+GLuint quad_vbo;
+mat4 quad_model;
+// get quad_view and quad_proj by camera.
+
+// depth map
+GLuint fbo_depth_map;
+GLuint tex_depth_map;
+
 
 static const GLfloat cubemap_positions[] =
 {
@@ -110,24 +164,15 @@ vector<std::string> faces_s =
 	"cubemaps_s/face-f.png"
 };
 
-struct Shape
+static const GLfloat quad_positions[] = 
 {
-	GLuint vao;
-	GLuint vbo_position;
-	GLuint vbo_normal;
-	GLuint vbo_texcoord;
-	GLuint ibo;
-	int drawCount;
-	int materialID;
+ 	 1,  0, -1,
+	-1,  0, -1,
+	 1,  0,  1,
+	-1,  0, -1,
+	 1,  0,  1,
+	-1,  0,  1
 };
-
-struct Material
-{
-	GLuint diffuse_tex;
-};
-
-vector<Shape> Shapes;
-vector<Material>Materials;
 
 static const GLfloat window_positions[] =
 {
@@ -140,6 +185,7 @@ static const GLfloat window_positions[] =
 // proto-type
 void My_Reshape(int width, int height);
 
+/*
 char** loadShaderSource(const char* file)
 {
     FILE* fp = fopen(file, "rb");
@@ -159,6 +205,7 @@ void freeShaderSource(char** srcp)
     delete[] srcp[0];
     delete[] srcp;
 }
+*/
 
 // define a simple data structure for storing texture image raw data
 typedef struct _TextureData
@@ -171,7 +218,7 @@ typedef struct _TextureData
     }
 
     int width;
-    int height;
+	int height;
     unsigned char* data;
 } TextureData;
 
@@ -214,6 +261,7 @@ TextureData loadPNG(const char* const pngFilepath, int channels)
     return texture;
 }
 
+/*
 GLuint My_LoadShader(const char *vsName, const char *fsName)
 {
 	// Create Shader Program
@@ -249,12 +297,14 @@ GLuint My_LoadShader(const char *vsName, const char *fsName)
 
 	return program;
 }
+*/
 
-void My_LoadModels(const char *objName)
+void My_LoadModels(const char *objName, vector<Shape> &obj_shapes, vector<Material> &obj_materials)
 {
 	const aiScene *scene = aiImportFile(objName, aiProcessPreset_TargetRealtime_MaxQuality);
 	if (scene == NULL) {
 		std::cout << "error scene load\n";
+		return ;
 	}
 	else
 		std::cout << "load " << objName << " sucess\n"
@@ -292,7 +342,7 @@ void My_LoadModels(const char *objName)
 		{
 			cout << "material[ " << i << " ].texturePath is not found\n";
 		}
-		Materials.push_back(materials);
+		obj_materials.push_back(materials);
 
 	}
 	for (unsigned int i = 0; i < scene->mNumMeshes; ++i)
@@ -357,8 +407,7 @@ void My_LoadModels(const char *objName)
 		shape.drawCount = mesh->mNumFaces * 3;
 		// save shape¡K
 
-		Shapes.push_back(shape);
-	
+		obj_shapes.push_back(shape);
 		cout << "shape[ " << i << " ].materialID = " << shape.materialID << "\n";
 	}
 
@@ -402,29 +451,86 @@ void My_Init()
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LEQUAL);
 
-	cubemap_program = My_LoadShader("cubemap_vertex.vs.glsl", "cubemap_fragment.fs.glsl");
+	if (false) {
+		// ==============================================
+		// cubemap 
+		// cubemap_program = My_LoadShader("cubemap_vertex.vs.glsl", "cubemap_fragment.fs.glsl");
+		cubemap_program.set_program("cubemap_vertex.vs.glsl", "cubemap_fragment.fs.glsl");
 
-	// cubemap vao and vbo
-	glGenVertexArrays(1, &cubemap_vao);
-	glBindVertexArray(cubemap_vao);
+		// cubemap vao and vbo
+		glGenVertexArrays(1, &cubemap_vao);
+		glBindVertexArray(cubemap_vao);
 
-	glGenBuffers(1, &cubemap_vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, cubemap_vbo);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(cubemap_positions), cubemap_positions, GL_STATIC_DRAW);
+		glGenBuffers(1, &cubemap_vbo);
+		glBindBuffer(GL_ARRAY_BUFFER, cubemap_vbo);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(cubemap_positions), cubemap_positions, GL_STATIC_DRAW);
+
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
+		glEnableVertexAttribArray(0);
+
+		// Get the id of inner variable 'proj' and 'view' in shader programs
+		// cubemap_proj = glGetUniformLocation(cubemap_program, "proj");
+		// cubemap_view = glGetUniformLocation(cubemap_program, "view");
+		// cubemap_model = glGetUniformLocation(cubemap_program, "model");
+
+		// cubemap texture
+		// cubemap_tex = load_cubemap(faces);
+		cubemap_tex = load_cubemap(faces_s);
+
+		// seamless
+		glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
+	}
+	// ==============================================
+	// object
+	obj_program.set_program("object_vertex.vs.glsl", "object_fragment.fs.glsl");
+
+	My_LoadModels("nanosuit.obj", obj_shapes, obj_materials);
+
+	// ==============================================
+	// quad
+	quad_program.set_program("quad_vertex.vs.glsl", "quad_fragment.fs.glsl");
+
+	// quad vao and vbo
+	glGenVertexArrays(1, &quad_vao);
+	glBindVertexArray(quad_vao);
+
+	glGenBuffers(1, &quad_vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, quad_vbo);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(quad_positions), quad_positions, GL_STATIC_DRAW);
 
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
 	glEnableVertexAttribArray(0);
 
-	// Get the id of inner variable 'proj' and 'view' in shader programs
-	cubemap_proj = glGetUniformLocation(cubemap_program, "proj");
-	cubemap_view = glGetUniformLocation(cubemap_program, "view");
+	// ==============================================
+	// depth map
+	// frame buffer
+	glGenFramebuffers(1, &fbo_depth_map);
+	
+	// depth texture
+	glGenTextures(1, &tex_depth_map);
+	glBindTexture(GL_TEXTURE_2D, tex_depth_map);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT,
+				 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
-	// cubemap texture
-	// cubemap_tex = load_cubemap(faces);
-	cubemap_tex = load_cubemap(faces_s);
+	// bind depth texture to frame buffer
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo_depth_map);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, tex_depth_map, 0);
+	glDrawBuffer(GL_NONE);
+	glReadBuffer(GL_NONE);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-	// 
-	My_Reshape(600, 600);
+	// others
+	My_Reshape(WINDOW_WIDTH, WINDOW_HEIGHT);
+	glutWarpPointer(camera.aspect_w / 2, camera.aspect_h / 2);
+}
+
+void draw_obj(GLuint program, GLuint vao, mat4 model, mat4 view, mat4 proj, GLuint texture)
+{
+	;
 }
 
 void My_Display()
@@ -433,28 +539,97 @@ void My_Display()
 	glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+	camera.get_delta_time();
+	/*
+	// ==============================================
 	// draw cubemap
-	glDepthMask(GL_FALSE);
-	glUseProgram(cubemap_program);
+	// glUseProgram(cubemap_program);
+	cubemap_program.use();
 
 	glBindVertexArray(cubemap_vao);
 
-	// camera
-	camera.get_delta_time();
-	view = camera.get_view_matrix();
-	proj = camera.get_proj_matrix();
+	// model
+	cubemap_model = scale(mat4(), vec3(SKYBOX_SIZE, SKYBOX_SIZE, SKYBOX_SIZE));
+	// glUniformMatrix4fv(cubemap_model, 1, GL_FALSE, value_ptr(model));
+	cubemap_view = camera.get_view_matrix();
+	cubemap_proj = camera.get_proj_matrix();
 
-	glUniformMatrix4fv(cubemap_view, 1, GL_FALSE, value_ptr(view));
-	glUniformMatrix4fv(cubemap_proj, 1, GL_FALSE, value_ptr(proj));
+	// glUniformMatrix4fv(cubemap_view, 1, GL_FALSE, value_ptr(view));
+	// glUniformMatrix4fv(cubemap_proj, 1, GL_FALSE, value_ptr(proj));
+	cubemap_program.set_mat4("cubemap_model", cubemap_model);
+	cubemap_program.set_mat4("cubemap_view", cubemap_view);
+	cubemap_program.set_mat4("cubemap_proj", cubemap_proj);
 
 	glActiveTexture(GL_TEXTURE0);
-	glUniform1i(glGetUniformLocation(cubemap_program, "cubemap"), 0);
+	// glUniform1i(glGetUniformLocation(cubemap_program, "cubemap"), 0);
+	cubemap_program.set_int("cubemap", 0);
 	glBindTexture(GL_TEXTURE_CUBE_MAP, cubemap_tex);
 
 	glDrawArrays(GL_TRIANGLES, 0, 36);
+	*/
 
-	glDepthMask(GL_TRUE);
-    glutSwapBuffers();
+	// ==============================================
+	// object
+	obj_program.use();
+
+	for (int i = 0; i < obj_shapes.size(); ++i)
+	{
+		// vao
+		glBindVertexArray(obj_shapes[i].vao);
+
+		// texture 
+		// int materialID = Shapes[i].materialID;
+		// glBindTexture(GL_TEXTURE_2D, Materials[materialID].diffuse_tex);
+		// glActiveTexture(GL_TEXTURE0);
+
+		// mvp
+		// glUniformMatrix4fv(um4mv, 1, GL_FALSE, value_ptr(view *  model));
+		// glUniformMatrix4fv(um4p, 1, GL_FALSE, value_ptr(proj));
+		mat4 obj_model_scale = scale(mat4(), vec3(0.5, 0.35, 0.5));
+		mat4 obj_model_trans = translate(mat4(), vec3(-10, -13, -8));
+		obj_model = obj_model_trans * obj_model_scale;
+		obj_view = camera.get_view_matrix();
+		obj_proj = camera.get_proj_matrix();
+		obj_program.set_mat4("obj_model", obj_model);
+		obj_program.set_mat4("obj_view", obj_view);
+		obj_program.set_mat4("obj_proj", obj_proj);
+
+		// normal transformation
+		mat4 obj_normal_trans = transpose(inverse(obj_model));
+		obj_program.set_mat4("obj_normal_trans", obj_normal_trans);
+
+		// environment map
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_CUBE_MAP, cubemap_tex);
+
+		// draw
+		glDrawElements(GL_TRIANGLES, obj_shapes[i].drawCount, GL_UNSIGNED_INT, 0);
+	}
+
+	// ==============================================
+	// quad
+	quad_program.use();
+
+	glBindVertexArray(quad_vao);
+
+	float quad_size = 15;
+	mat4 quad_model_scale = scale(mat4(), vec3(quad_size, quad_size, quad_size));
+	mat4 quad_model_trans = translate(mat4(), vec3(-8, -13.5, 0));
+	quad_model = quad_model_trans * quad_model_scale;
+	quad_program.set_mat4("quad_model", quad_model);
+	quad_program.set_mat4("quad_view", camera.get_view_matrix());
+	quad_program.set_mat4("quad_proj", camera.get_proj_matrix());
+
+	glDrawArrays(GL_TRIANGLES, 0, 6);
+	
+	// ==============================================
+	// depth map
+	glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	// render depth of scene to texture
+
+	glutSwapBuffers();
 }
 
 void My_Reshape(int width, int height)
@@ -491,6 +666,12 @@ void My_Keyboard(unsigned char key, int x, int y)
 {
 	camera.camera_movement(key);
 	printf("Key %c is pressed at (%d, %d)\n", key, x, y);
+	/*
+	cout << "camera position: " << camera.Position[0] << " " << camera.Position[1] << " " << camera.Position[2] << "\n"
+		<< "camera front: " << camera.Front[0] << " " << camera.Front[1] << " " << camera.Front[2] << "\n"
+		<< "delta time: " << camera.delta_time << "\n"
+		<< "last frame: " << camera.last_frame << "\n";
+	*/
 }
 
 void My_SpecialKeys(int key, int x, int y)
@@ -561,7 +742,7 @@ int main(int argc, char *argv[])
     glutInitDisplayMode(GLUT_3_2_CORE_PROFILE | GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
 #endif
 	glutInitWindowPosition(100, 100);
-	glutInitWindowSize(600, 600);
+	glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
 	glutCreateWindow("AS4_Framework"); // You cannot use OpenGL functions before this line; The OpenGL context must be created first by glutCreateWindow()!
 #ifdef _MSC_VER
 	glewInit();
@@ -595,6 +776,7 @@ int main(int argc, char *argv[])
 	// camera
 	glutPassiveMotionFunc(detect_mouse);
 	glutMouseWheelFunc(detect_mouse_scroll);
+	// glutSetCursor(GLUT_CURSOR_NONE);
 
 	// Enter main event loop.
 	glutMainLoop();
