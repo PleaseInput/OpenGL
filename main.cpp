@@ -10,8 +10,8 @@
 #define MENU_TIMER_STOP 2
 #define MENU_EXIT 3
 #define SKYBOX_SIZE 500
-#define WINDOW_WIDTH 1440
-#define WINDOW_HEIGHT 900
+#define WINDOW_WIDTH 600//1440
+#define WINDOW_HEIGHT 600//900
 #define SHADOW_WIDTH 1024
 #define SHADOW_HEIGHT 1024
 
@@ -22,7 +22,8 @@ unsigned int timer_speed = 16;
 using namespace glm;
 using namespace std;
 
-Camera camera(vec3(0.0f, 0.0f, 0.0f), vec3(0.0f, 1.0f, 0.0f), vec3(-1.0, -1.0, 0.0), WINDOW_WIDTH, WINDOW_HEIGHT, 80.0);
+// pos(0, 0, 0) front(-1, -1, 0)
+Camera camera(vec3(0.0f, 0.0f, 5.0f), vec3(0.0f, 1.0f, 0.0f), vec3(0.0, 0.0, -1.0), WINDOW_WIDTH, WINDOW_HEIGHT, 80.0);
 
 // define some stucte
 struct Shape
@@ -41,14 +42,15 @@ struct Material
 	GLuint diffuse_tex;
 };
 
-/*
 struct MVP_mat
 {
 	mat4 proj;
 	mat4 view;
 	mat4 model;
+	string model_name;
+	string view_name;
+	string proj_name;
 };
-*/
 
 GLint um4mv;
 GLint um4p;
@@ -66,6 +68,8 @@ vector<Material> obj_materials;
 mat4 obj_proj;
 mat4 obj_view;
 mat4 obj_model;
+
+MVP_mat obj_mvp;
 
 // FB
 GLuint programFB;
@@ -91,10 +95,19 @@ GLuint quad_vao;
 GLuint quad_vbo;
 mat4 quad_model;
 // get quad_view and quad_proj by camera.
+MVP_mat quad_mvp;
+
+// depth tex
+Program depth_program;
+GLuint depth_fbo;
+GLuint depth_tex;
+MVP_mat depth_mvp;
 
 // depth map
-GLuint fbo_depth_map;
-GLuint tex_depth_map;
+Program depthmap_program;
+
+// debug depth
+Program debug_depth_program;
 
 
 static const GLfloat cubemap_positions[] =
@@ -180,6 +193,17 @@ static const GLfloat window_positions[] =
 	-1.0f,-1.0f,0.0f,0.0f,
 	-1.0f,1.0f,0.0f,1.0f,
 	1.0f,1.0f,1.0f,1.0f
+};
+
+// debug
+GLuint quadVAO = 0;
+GLuint quadVBO;
+GLfloat quadVertices[] = {
+	// Positions        // Texture Coords
+	-1.0f,  1.0f, 0.0f,  0.0f, 1.0f,
+	-1.0f, -1.0f, 0.0f,  0.0f, 0.0f,
+	1.0f,  1.0f, 0.0f,  1.0f, 1.0f,
+	1.0f, -1.0f, 0.0f,  1.0f, 0.0f,
 };
 
 // proto-type
@@ -480,6 +504,7 @@ void My_Init()
 		// seamless
 		glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
 	}
+	/*
 	// ==============================================
 	// object
 	obj_program.set_program("object_vertex.vs.glsl", "object_fragment.fs.glsl");
@@ -500,46 +525,81 @@ void My_Init()
 
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
 	glEnableVertexAttribArray(0);
-
+	*/
+	/*
 	// ==============================================
 	// depth map
+	depth_program.set_program("depth_vertex.vs.glsl", "depth_fragment.fs.glsl");
+	debug_depth_program.set_program("debug_depth_vertex.vs.glsl", "debug_depth_fragment.fs.glsl");
+	
 	// frame buffer
-	glGenFramebuffers(1, &fbo_depth_map);
+	glGenFramebuffers(1, &depth_fbo);
 	
 	// depth texture
-	glGenTextures(1, &tex_depth_map);
-	glBindTexture(GL_TEXTURE_2D, tex_depth_map);
+	glGenTextures(1, &depth_tex);
+	glBindTexture(GL_TEXTURE_2D, depth_tex);
+	
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT,
 				 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
 	// bind depth texture to frame buffer
-	glBindFramebuffer(GL_FRAMEBUFFER, fbo_depth_map);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, tex_depth_map, 0);
-	glDrawBuffer(GL_NONE);
-	glReadBuffer(GL_NONE);
+	glBindFramebuffer(GL_FRAMEBUFFER, depth_fbo);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depth_tex, 0);
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	// Setup plane VAO
+	glGenVertexArrays(1, &quadVAO);
+	glGenBuffers(1, &quadVBO);
+	glBindVertexArray(quadVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), (GLvoid*)0);
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), (GLvoid*)(3 * sizeof(GLfloat)));
+	*/
 
 	// others
 	My_Reshape(WINDOW_WIDTH, WINDOW_HEIGHT);
-	glutWarpPointer(camera.aspect_w / 2, camera.aspect_h / 2);
+	// glutWarpPointer(camera.aspect_w / 2, camera.aspect_h / 2);
 }
 
-void draw_obj(GLuint program, GLuint vao, mat4 model, mat4 view, mat4 proj, GLuint texture)
+// if need to send other uniform variables, send it before use draw_obj().
+void draw_obj(Program program, GLuint vao, MVP_mat mvp, GLenum target, GLuint texture, bool mode, int count)
 {
-	;
+	program.use();
+	
+	glBindVertexArray(vao);
+
+	program.set_mat4(mvp.model_name, mvp.model);
+	program.set_mat4(mvp.view_name, mvp.view);
+	program.set_mat4(mvp.proj_name, mvp.proj);
+
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(target, texture);
+
+	if (mode == 0)
+	{
+		glDrawArrays(GL_TRIANGLES, 0, count);
+	}
+	else if (mode == 1)
+	{
+		glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_INT, 0);
+	}
+	glBindVertexArray(0);
 }
 
 void My_Display()
 {
-	// clear buffers
-	glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	camera.get_delta_time();
+	
 	/*
 	// ==============================================
 	// draw cubemap
@@ -561,15 +621,15 @@ void My_Display()
 	cubemap_program.set_mat4("cubemap_proj", cubemap_proj);
 
 	glActiveTexture(GL_TEXTURE0);
-	// glUniform1i(glGetUniformLocation(cubemap_program, "cubemap"), 0);
+	// glUniform1i(glGetUniformLocation(cubemap_program.program_ID, "cubemap"), 0);
 	cubemap_program.set_int("cubemap", 0);
 	glBindTexture(GL_TEXTURE_CUBE_MAP, cubemap_tex);
 
 	glDrawArrays(GL_TRIANGLES, 0, 36);
 	*/
-
 	// ==============================================
 	// object
+	/*
 	obj_program.use();
 
 	for (int i = 0; i < obj_shapes.size(); ++i)
@@ -605,9 +665,30 @@ void My_Display()
 		// draw
 		glDrawElements(GL_TRIANGLES, obj_shapes[i].drawCount, GL_UNSIGNED_INT, 0);
 	}
+	*/
+
+	/*
+	for (int i = 0; i < obj_shapes.size(); ++i)
+	{
+		obj_mvp.model = translate(mat4(), vec3(-10, -13, -8)) * scale(mat4(), vec3(0.5, 0.35, 0.5));
+		obj_mvp.view = camera.get_view_matrix();
+		obj_mvp.proj = camera.get_proj_matrix();
+
+		obj_mvp.model_name = string("obj_model");
+		obj_mvp.view_name = string("obj_view");
+		obj_mvp.proj_name = string("obj_proj");
+
+		// normal transformation
+		mat4 obj_normal_trans = transpose(inverse(obj_mvp.model));
+		obj_program.set_mat4("obj_normal_trans", obj_normal_trans);
+		
+		draw_obj(obj_program, obj_shapes[i].vao, obj_mvp, GL_TEXTURE_CUBE_MAP, cubemap_tex, 1, obj_shapes[i].drawCount);
+	}
+	*/
 
 	// ==============================================
 	// quad
+	/*
 	quad_program.use();
 
 	glBindVertexArray(quad_vao);
@@ -621,13 +702,75 @@ void My_Display()
 	quad_program.set_mat4("quad_proj", camera.get_proj_matrix());
 
 	glDrawArrays(GL_TRIANGLES, 0, 6);
-	
+	*/
+
+	/*
+	float quad_size = 15;
+	quad_mvp.model = translate(mat4(), vec3(-8, -13.5, 0)) * scale(mat4(), vec3(quad_size, quad_size, quad_size));
+	quad_mvp.view = camera.get_view_matrix();
+	quad_mvp.proj = camera.get_proj_matrix();
+
+	quad_mvp.model_name = string("quad_model");
+	quad_mvp.view_name = string("quad_view");
+	quad_mvp.proj_name = string("quad_proj");
+
+	draw_obj(quad_program, quad_vao, quad_mvp, NULL, NULL, 0, 6);
+	*/
+
 	// ==============================================
-	// depth map
-	glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+	// 1. render depth texture
+	// clear buffers
+	/*
+	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	// render depth of scene to texture
+	glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+	glBindFramebuffer(GL_FRAMEBUFFER, depth_fbo);
+	glDrawBuffer(GL_NONE);
+	glReadBuffer(GL_NONE);
+
+	// draw obj's depth
+	depth_program.use();
+
+	vec3 obj_pos = vec3(-10, -13, -8);
+	vec3 eye_pos = vec3(-31.75, 26.05, -97.72);
+	const float shadow_range = 15.0f;
+
+	depth_mvp.model = translate(mat4(), obj_pos) * scale(mat4(), vec3(0.5, 0.35, 0.5));
+	depth_mvp.view = lookAt(eye_pos, obj_pos, vec3(0, 1, 0));
+	depth_mvp.proj = ortho(-shadow_range, shadow_range, -shadow_range, shadow_range, 0.0f, 50.0f);
+	depth_mvp.model_name = string("obj_model");
+	depth_mvp.view_name = string("light_view");
+	depth_mvp.proj_name = string("light_proj");
+
+	for (int i = 0; i < obj_shapes.size(); ++i)
+	{
+		draw_obj(depth_program, obj_shapes[i].vao, depth_mvp, NULL, NULL, 1, obj_shapes[i].drawCount);
+	}
+
+	// draw quad's depth
+	float quad_size = 15;
+	depth_mvp.model = translate(mat4(), vec3(-8, -13.5, 0)) * scale(mat4(), vec3(quad_size, quad_size, quad_size));
+
+	draw_obj(depth_program, quad_vao, depth_mvp, NULL, NULL, 0, 6);
+
+	// 2. render depth texture to other quad
+	glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+	glDrawBuffer(GL_FRONT);
+	glReadBuffer(GL_FRONT);
+	glClearColor(0.0f, 1.0f, 0.0f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	debug_depth_program.use();
+	
+	glBindVertexArray(quadVAO);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, depth_tex);
+
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	glBindVertexArray(0);
+	*/
 
 	glutSwapBuffers();
 }
